@@ -42,7 +42,7 @@ pipeline {
           sh '''
             docker build -t $IMAGE $APP_DIR
             echo "$DH_PASS" | docker login -u "$DH_USER" --password-stdin
-            docker push $IMAGE
+            for i in 1 2 3 4; do docker push $IMAGE && break; [ $i = 4 ] && exit 1; echo "push retry $i"; sleep 10; done
           '''
         }
       }

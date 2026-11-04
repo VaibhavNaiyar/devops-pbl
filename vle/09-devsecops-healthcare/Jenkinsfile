@@ -99,7 +99,10 @@ pipeline {
     stage('9. Push signed-off image') {
       steps {
         withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
-          sh 'echo "$DH_PASS" | docker login -u "$DH_USER" --password-stdin && docker push $IMAGE'
+          sh '''
+            echo "$DH_PASS" | docker login -u "$DH_USER" --password-stdin
+            for i in 1 2 3 4; do docker push $IMAGE && break; [ $i = 4 ] && exit 1; echo "push retry $i"; sleep 10; done
+          '''
         }
       }
     }

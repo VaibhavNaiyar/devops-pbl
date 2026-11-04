@@ -27,8 +27,10 @@ pipeline {
         withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
           sh '''
             echo "$DH_PASS" | docker login -u "$DH_USER" --password-stdin
-            docker push $IMAGE
-            docker push ${IMAGE%:*}:latest
+            # retry: Docker Desktop's registry proxy can drop uploads on flaky networks
+            for t in $IMAGE ${IMAGE%:*}:latest; do
+              for i in 1 2 3 4; do docker push $t && break; [ $i = 4 ] && exit 1; echo "push retry $i"; sleep 10; done
+            done
           '''
         }
       }
