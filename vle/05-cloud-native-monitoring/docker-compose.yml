@@ -1,0 +1,36 @@
+# VLE 5 - app + Prometheus + Grafana + Alertmanager + node-exporter + cAdvisor
+services:
+  app:
+    build: ./app
+    image: pbl-shop:1.0.0
+    ports: ["3000:3000"]
+    environment: [APP_VERSION=1.0.0]
+    restart: unless-stopped
+    deploy: { replicas: 1 }
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alert-rules.yml:/etc/prometheus/alert-rules.yml:ro
+    ports: ["9090:9090"]
+    depends_on: [app]
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    volumes: [./monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro]
+    ports: ["9094:9093"]   # host 9094: Windows reserves 9093 (Hyper-V excluded port range)
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    ports: ["9100:9100"]
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    ports: ["3001:3000"]
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on: [prometheus]

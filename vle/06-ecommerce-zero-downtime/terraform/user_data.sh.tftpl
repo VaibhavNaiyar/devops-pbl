@@ -1,0 +1,7 @@
+#!/bin/bash
+# Automated server setup - no manual SSH configuration ever
+set -eux
+dnf install -y docker
+systemctl enable --now docker
+docker run -d --name app --restart always -p ${app_port}:${app_port} \
+  -e APP_VERSION=${version} -e PORT=${app_port} ${image}

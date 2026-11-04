@@ -1,0 +1,14 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: pbl
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      - containerPort: 30080   # NodePort for VLE 7 app
+        hostPort: 30080
+      - containerPort: 30081   # NodePort for VLE 8 live (blue/green)
+        hostPort: 30081
+      - containerPort: 30082   # NodePort for VLE 8 preview
+        hostPort: 30082
+      - containerPort: 30083   # NodePort for VLE 9
+        hostPort: 30083

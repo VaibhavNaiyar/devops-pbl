@@ -1,0 +1,12 @@
+services:
+  web:
+    build: ./app
+    image: pbl-flask:1.0
+    ports: ["5000:5000"]
+    environment: [REDIS_HOST=redis]
+    depends_on: [redis]
+  redis:
+    image: redis:7-alpine
+    volumes: [redis-data:/data]
+volumes:
+  redis-data:

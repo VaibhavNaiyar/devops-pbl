@@ -1,0 +1,119 @@
+// VLE 8 - Automated Blue-Green Deployment using Jenkins, Kubernetes, Docker
+pipeline {
+  agent any
+  options { timestamps(); timeout(time: 30, unit: 'MINUTES') }
+  parameters {
+    booleanParam(name: 'AUTO_SWITCH', defaultValue: false, description: 'Switch traffic without manual approval')
+    booleanParam(name: 'ROLLBACK_ONLY', defaultValue: false, description: 'Just flip traffic back to the previous color')
+  }
+  environment {
+    APP_DIR = 'vle/08-blue-green-jenkins-k8s/app'
+    K8S_DIR = 'vle/08-blue-green-jenkins-k8s/k8s'
+    NS      = 'bluegreen'
+    VERSION = "2.0.${BUILD_NUMBER}"
+  }
+  stages {
+    stage('Detect live color') {
+      steps {
+        withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
+          sh 'kubectl apply -f $K8S_DIR/services.yaml'
+          script {
+            env.LIVE = sh(script: "kubectl -n ${NS} get svc shop-live -o jsonpath='{.spec.selector.color}'", returnStdout: true).trim()
+            env.IDLE = env.LIVE == 'blue' ? 'green' : 'blue'
+            echo "LIVE=${env.LIVE}  ->  deploying to IDLE=${env.IDLE}"
+          }
+        }
+      }
+    }
+    stage('Rollback') {
+      when { expression { params.ROLLBACK_ONLY } }
+      steps { script { switchTraffic(env.IDLE) ; currentBuild.result = 'SUCCESS' } }
+    }
+    stage('Test') {
+      when { expression { !params.ROLLBACK_ONLY } }
+      steps { dir(env.APP_DIR) { sh 'npm ci && npm test' } }
+    }
+    stage('Build & Push') {
+      when { expression { !params.ROLLBACK_ONLY } }
+      steps {
+        withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
+          script { env.IMAGE = "${DH_USER}/pbl-shop:${VERSION}" }
+          sh '''
+            docker build -t $IMAGE $APP_DIR
+            echo "$DH_PASS" | docker login -u "$DH_USER" --password-stdin
+            docker push $IMAGE
+          '''
+        }
+      }
+    }
+    stage('Deploy to idle color') {
+      when { expression { !params.ROLLBACK_ONLY } }
+      steps {
+        withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
+          sh '''
+            sed -e "s|COLOR|$IDLE|g" -e "s|IMAGE|$IMAGE|" -e "s|VERSION|$VERSION|" $K8S_DIR/deployment-template.yaml | kubectl apply -f -
+            kubectl -n $NS rollout status deployment/shop-$IDLE --timeout=180s
+          '''
+        }
+      }
+    }
+    stage('Smoke test idle (preview)') {
+      when { expression { !params.ROLLBACK_ONLY } }
+      steps {
+        withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
+          sh '''
+            kubectl -n $NS patch svc shop-preview -p "{\\"spec\\":{\\"selector\\":{\\"app\\":\\"shop\\",\\"color\\":\\"$IDLE\\"}}}"
+            kubectl -n $NS run smoke-$BUILD_NUMBER --rm -i --restart=Never --image=curlimages/curl -- \
+              curl -fs http://shop-preview.$NS.svc.cluster.local/health | tee /tmp/bg.json
+            grep -q "\\"color\\":\\"$IDLE\\"" /tmp/bg.json && grep -q "$VERSION" /tmp/bg.json
+          '''
+        }
+      }
+    }
+    stage('Approve go-live') {
+      when { expression { !params.ROLLBACK_ONLY && !params.AUTO_SWITCH } }
+      steps {
+        timeout(time: 10, unit: 'MINUTES') {
+          input message: "Preview OK at http://localhost:30082 - switch live traffic ${env.LIVE} -> ${env.IDLE}?"
+        }
+      }
+    }
+    stage('Switch traffic') {
+      when { expression { !params.ROLLBACK_ONLY } }
+      steps { script { switchTraffic(env.IDLE) } }
+    }
+    stage('Verify live') {
+      when { expression { !params.ROLLBACK_ONLY } }
+      steps {
+        withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
+          sh '''
+            kubectl -n $NS run verify-$BUILD_NUMBER --rm -i --restart=Never --image=curlimages/curl -- \
+              curl -fs http://shop-live.$NS.svc.cluster.local/health | grep -q "\\"color\\":\\"$IDLE\\""
+          '''
+        }
+      }
+    }
+  }
+  post {
+    failure {
+      script {
+        if (env.LIVE) {
+          echo "Failure -> keeping/restoring traffic on ${env.LIVE}"
+          switchTraffic(env.LIVE)
+        }
+      }
+    }
+    success { echo "LIVE is now ${env.IDLE ?: env.LIVE} -> http://localhost:30081 (old color kept for instant rollback)" }
+  }
+}
+
+def switchTraffic(String to) {
+  def other = to == 'blue' ? 'green' : 'blue'
+  withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
+    sh """
+      kubectl -n ${env.NS} patch svc shop-live    -p '{"spec":{"selector":{"app":"shop","color":"${to}"}}}'
+      kubectl -n ${env.NS} patch svc shop-preview -p '{"spec":{"selector":{"app":"shop","color":"${other}"}}}'
+      kubectl -n ${env.NS} get svc -o wide
+    """
+  }
+}

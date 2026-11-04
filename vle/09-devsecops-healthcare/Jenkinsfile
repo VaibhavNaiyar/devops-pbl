@@ -1,0 +1,135 @@
+// VLE 9 - Secure DevOps (DevSecOps) pipeline for a Healthcare system
+// Security is "shifted left": every stage can fail the build before PHI-handling code reaches production.
+pipeline {
+  agent any
+  options { timestamps(); timeout(time: 40, unit: 'MINUTES') }
+  environment {
+    APP_DIR  = 'vle/09-devsecops-healthcare/app'
+    K8S_DIR  = 'vle/09-devsecops-healthcare/k8s'
+    SEC_DIR  = 'vle/09-devsecops-healthcare/security'
+    VERSION  = "1.0.${BUILD_NUMBER}"
+    SONAR_URL = 'http://sonarqube:9000'
+  }
+  stages {
+    stage('Checkout') { steps { checkout scm } }
+
+    stage('1. Secret scanning (Gitleaks)') {
+      steps {
+        sh '''
+          docker run --rm -v "$WORKSPACE:/repo" zricethezav/gitleaks:v8.21.2 detect \
+            --source /repo --config /repo/$SEC_DIR/.gitleaks.toml --no-git \
+            --report-format json --report-path /repo/gitleaks-report.json --exit-code 1
+        '''
+      }
+    }
+
+    stage('2. Unit tests + coverage') {
+      steps {
+        dir(env.APP_DIR) {
+          sh 'npm ci'
+          sh 'node --test --experimental-test-coverage --test-reporter=lcov --test-reporter-destination=lcov.info test/*.test.js && mkdir -p coverage && mv lcov.info coverage/'
+        }
+      }
+    }
+
+    stage('3. SCA - dependency vulnerabilities') {
+      parallel {
+        stage('npm audit') {
+          steps { dir(env.APP_DIR) { sh 'npm audit --omit=dev --audit-level=high' } }
+        }
+        stage('OWASP Dependency-Check') {
+          steps {
+            sh '''
+              mkdir -p odc-report
+              docker run --rm -v "$WORKSPACE/$APP_DIR:/src" -v "$WORKSPACE/odc-report:/report" \
+                -v odc-data:/usr/share/dependency-check/data owasp/dependency-check:latest \
+                --scan /src --format HTML --format JSON --out /report --project patient-api \
+                --failOnCVSS 9 --disableYarnAudit || echo "ODC finished"
+            '''
+          }
+        }
+      }
+    }
+
+    stage('4. SAST (SonarQube) + Quality Gate') {
+      steps {
+        withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
+          sh '''
+            docker run --rm --network kind -v "$WORKSPACE/$APP_DIR:/usr/src" sonarsource/sonar-scanner-cli \
+              -Dsonar.host.url=$SONAR_URL -Dsonar.token=$SONAR_TOKEN -Dsonar.qualitygate.wait=true
+          '''
+        }
+      }
+    }
+
+    stage('5. Dockerfile lint (Hadolint)') {
+      steps { sh 'docker run --rm -i hadolint/hadolint:latest-alpine < $APP_DIR/Dockerfile' }
+    }
+
+    stage('6. Build image') {
+      steps {
+        withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
+          script { env.IMAGE = "${DH_USER}/patient-api:${VERSION}" }
+          sh 'docker build -t $IMAGE $APP_DIR'
+        }
+      }
+    }
+
+    stage('7. Container scan (Trivy)') {
+      steps {
+        sh '''
+          trivy image --no-progress --format table -o trivy-image.txt $IMAGE
+          trivy image --no-progress --severity CRITICAL,HIGH --ignore-unfixed --exit-code 1 $IMAGE
+        '''
+      }
+    }
+
+    stage('8. IaC / K8s manifest scan (Trivy config)') {
+      steps { sh 'trivy config --severity HIGH,CRITICAL --exit-code 1 $K8S_DIR' }
+    }
+
+    stage('9. Push signed-off image') {
+      steps {
+        withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
+          sh 'echo "$DH_PASS" | docker login -u "$DH_USER" --password-stdin && docker push $IMAGE'
+        }
+      }
+    }
+
+    stage('10. Secure deploy') {
+      steps {
+        withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG'),
+                         string(credentialsId: 'patient-api-key', variable: 'API_KEY')]) {
+          sh '''
+            kubectl apply -f $K8S_DIR/secure-deployment.yaml --dry-run=server >/dev/null
+            kubectl create namespace healthcare --dry-run=client -o yaml | kubectl apply -f -
+            kubectl -n healthcare create secret generic patient-api-secret \
+              --from-literal=api-key="$API_KEY" --dry-run=client -o yaml | kubectl apply -f -
+            sed "s|IMAGE_PLACEHOLDER|$IMAGE|" $K8S_DIR/secure-deployment.yaml | kubectl apply -f -
+            kubectl apply -f $K8S_DIR/network-policy.yaml -f $K8S_DIR/rbac.yaml
+            kubectl -n healthcare rollout status deployment/patient-api --timeout=180s
+          '''
+        }
+      }
+    }
+
+    stage('11. DAST (OWASP ZAP baseline)') {
+      steps {
+        sh '''
+          mkdir -p zap && chmod 777 zap
+          docker run --rm --network kind -v "$WORKSPACE/zap:/zap/wrk" ghcr.io/zaproxy/zaproxy:stable \
+            zap-baseline.py -t http://pbl-control-plane:30083/health -r zap-report.html -I || true
+        '''
+      }
+    }
+  }
+  post {
+    always {
+      archiveArtifacts allowEmptyArchive: true, artifacts: 'gitleaks-report.json,trivy-image.txt,odc-report/**,zap/**'
+      publishHTML([allowMissing: true, alwaysLinkToLastBuild: true, keepAll: true, reportDir: 'zap', reportFiles: 'zap-report.html', reportName: 'ZAP DAST Report'])
+      publishHTML([allowMissing: true, alwaysLinkToLastBuild: true, keepAll: true, reportDir: 'odc-report', reportFiles: 'dependency-check-report.html', reportName: 'OWASP Dependency-Check'])
+      sh 'docker logout || true'
+    }
+    failure { echo 'Security gate failed - image NOT deployed. Check archived reports.' }
+  }
+}

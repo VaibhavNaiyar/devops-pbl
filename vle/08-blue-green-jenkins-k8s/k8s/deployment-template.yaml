@@ -1,0 +1,25 @@
+# Rendered twice by the pipeline: COLOR=blue and COLOR=green
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shop-COLOR
+  namespace: bluegreen
+  labels: { app: shop, color: COLOR }
+spec:
+  replicas: 2
+  selector: { matchLabels: { app: shop, color: COLOR } }
+  template:
+    metadata: { labels: { app: shop, color: COLOR } }
+    spec:
+      containers:
+        - name: shop
+          image: IMAGE
+          ports: [{ containerPort: 3000 }]
+          env:
+            - { name: APP_COLOR, value: COLOR }
+            - { name: APP_VERSION, value: "VERSION" }
+          readinessProbe: { httpGet: { path: /ready, port: 3000 }, periodSeconds: 5 }
+          livenessProbe: { httpGet: { path: /health, port: 3000 }, initialDelaySeconds: 5 }
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 200m, memory: 128Mi }

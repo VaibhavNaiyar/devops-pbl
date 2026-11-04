@@ -1,0 +1,13 @@
+# docker stack deploy -c swarm-stack.yml pbl
+services:
+  web:
+    image: pbl-flask:1.0
+    ports: ["5000:5000"]
+    environment: [REDIS_HOST=redis]
+    deploy:
+      replicas: 3
+      update_config: { parallelism: 1, delay: 5s }
+      restart_policy: { condition: on-failure }
+  redis:
+    image: redis:7-alpine
+    deploy: { replicas: 1 }

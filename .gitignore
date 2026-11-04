@@ -1,0 +1,19 @@
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+tfplan
+crash.log
+# Secrets / generated
+*.pem
+kubeconfig*.yaml
+**/04-terraform-ansible-ec2/ansible/inventory.ini
+.env
+# Node / build output
+node_modules/
+coverage/
+# Local run output
+evidence/
+demo-files/
+downloaded.txt
+*.retry

@@ -1,0 +1,12 @@
+workflow-aggregator
+git
+github
+credentials-binding
+pipeline-stage-view
+docker-workflow
+blueocean
+sonar
+dependency-check-jenkins-plugin
+htmlpublisher
+timestamper
+ws-cleanup

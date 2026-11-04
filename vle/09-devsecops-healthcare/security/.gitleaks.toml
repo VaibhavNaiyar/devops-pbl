@@ -1,0 +1,7 @@
+title = "gitleaks config - healthcare"
+[extend]
+useDefault = true
+[allowlist]
+description = "unit-test dummy key"
+regexes = ['''test-key-only-for-unit-tests''']
+paths = ['''node_modules''', '''odc-report''', '''zap''']

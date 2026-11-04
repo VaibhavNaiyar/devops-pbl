@@ -1,0 +1,6 @@
+route:
+  receiver: default
+  group_wait: 10s
+receivers:
+  - name: default
+    # add email_configs / slack_configs here for real notifications

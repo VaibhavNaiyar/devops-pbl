@@ -1,0 +1,63 @@
+---
+- name: Wait for EC2 to accept SSH
+  hosts: web
+  gather_facts: false
+  tasks:
+    - name: Wait for connection
+      ansible.builtin.wait_for_connection:
+        timeout: 300
+
+- name: Configure web server
+  hosts: web
+  become: true
+  vars:
+    app_name: "VLE-4: EC2 via Terraform + Ansible"
+  tasks:
+    - name: Upgrade apt cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Install packages
+      ansible.builtin.apt:
+        name: [nginx, ufw, fail2ban, unattended-upgrades]
+        state: present
+
+    - name: Firewall - allow SSH and HTTP
+      community.general.ufw:
+        rule: allow
+        port: "{{ item }}"
+        proto: tcp
+      loop: ["22", "80"]
+
+    - name: Enable firewall
+      community.general.ufw:
+        state: enabled
+        policy: deny
+
+    - name: Deploy site
+      ansible.builtin.template:
+        src: templates/index.html.j2
+        dest: /var/www/html/index.html
+        mode: "0644"
+      notify: Reload nginx
+
+    - name: Hide nginx version
+      ansible.builtin.lineinfile:
+        path: /etc/nginx/nginx.conf
+        regexp: '^\s*#?\s*server_tokens'
+        line: "        server_tokens off;"
+      notify: Reload nginx
+
+    - name: Start services
+      ansible.builtin.service:
+        name: "{{ item }}"
+        state: started
+        enabled: true
+      loop: [nginx, fail2ban]
+
+  handlers:
+    - name: Reload nginx
+      ansible.builtin.service:
+        name: nginx
+        state: reloaded

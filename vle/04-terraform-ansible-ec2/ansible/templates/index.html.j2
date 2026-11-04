@@ -1,0 +1,10 @@
+<!doctype html><html><head><meta charset="utf-8"><title>{{ app_name }}</title>
+<style>body{font-family:system-ui;background:#111827;color:#f3f4f6;display:grid;place-items:center;height:100vh;margin:0}
+.c{background:#1f2937;padding:2.5rem;border-radius:14px}h1{color:#f59e0b}td{padding:4px 14px}</style></head>
+<body><div class="c"><h1>{{ app_name }}</h1><table>
+<tr><td>Provisioned by</td><td>Terraform</td></tr>
+<tr><td>Configured by</td><td>Ansible</td></tr>
+<tr><td>Hostname</td><td>{{ ansible_hostname }}</td></tr>
+<tr><td>Private IP</td><td>{{ ansible_default_ipv4.address }}</td></tr>
+<tr><td>OS</td><td>{{ ansible_distribution }} {{ ansible_distribution_version }}</td></tr>
+<tr><td>Deployed</td><td>{{ ansible_date_time.iso8601 }}</td></tr></table></div></body></html>

@@ -1,0 +1,45 @@
+---
+# Practice 9 - Setting up and running an Ansible playbook
+- name: Basic server setup
+  hosts: local
+  become: true
+  vars:
+    packages: [git, curl, tree, htop]
+    app_user: devops
+  tasks:
+    - name: Ping
+      ansible.builtin.ping:
+
+    - name: Gather a fact
+      ansible.builtin.debug:
+        msg: "Host {{ ansible_hostname }} runs {{ ansible_distribution }} {{ ansible_distribution_version }}"
+
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Install packages
+      ansible.builtin.apt:
+        name: "{{ packages }}"
+        state: present
+
+    - name: Create user
+      ansible.builtin.user:
+        name: "{{ app_user }}"
+        shell: /bin/bash
+        state: present
+
+    - name: Create app directory
+      ansible.builtin.file:
+        path: /opt/pbl-app
+        state: directory
+        owner: "{{ app_user }}"
+        mode: "0755"
+
+    - name: Write a file from template string
+      ansible.builtin.copy:
+        dest: /opt/pbl-app/info.txt
+        content: "Provisioned by Ansible on {{ ansible_date_time.iso8601 }}\n"
+        owner: "{{ app_user }}"
+        mode: "0644"

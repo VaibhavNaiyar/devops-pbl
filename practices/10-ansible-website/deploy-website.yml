@@ -1,0 +1,43 @@
+---
+# Practice 10 - Deploying a website using Ansible (Nginx on Ubuntu EC2)
+- name: Deploy static website
+  hosts: web
+  become: true
+  vars:
+    site_title: "PBL-2 Website deployed with Ansible"
+    student: "Vaibhav"
+  tasks:
+    - name: Install nginx
+      ansible.builtin.apt:
+        name: nginx
+        state: present
+        update_cache: true
+
+    - name: Deploy index.html from Jinja2 template
+      ansible.builtin.template:
+        src: templates/index.html.j2
+        dest: /var/www/html/index.html
+        mode: "0644"
+      notify: Reload nginx
+
+    - name: Ensure nginx is running and enabled
+      ansible.builtin.service:
+        name: nginx
+        state: started
+        enabled: true
+
+    - name: Verify site responds
+      ansible.builtin.uri:
+        url: http://localhost
+        return_content: true
+      register: page
+
+    - name: Show result
+      ansible.builtin.debug:
+        msg: "HTTP {{ page.status }} - title found: {{ site_title in page.content }}"
+
+  handlers:
+    - name: Reload nginx
+      ansible.builtin.service:
+        name: nginx
+        state: reloaded

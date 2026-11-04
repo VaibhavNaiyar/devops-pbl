@@ -1,0 +1,16 @@
+{
+  "name": "medicare-patient-api",
+  "version": "1.0.0",
+  "description": "Healthcare patient-records API built with DevSecOps controls",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test --experimental-test-coverage test/*.test.js"
+  },
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "express": "^4.21.1",
+    "express-rate-limit": "^7.4.1",
+    "helmet": "^8.0.0"
+  }
+}
