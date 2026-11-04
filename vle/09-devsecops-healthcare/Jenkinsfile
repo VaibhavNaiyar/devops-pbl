@@ -3,6 +3,12 @@
 pipeline {
   agent any
   options { timestamps(); timeout(time: 40, unit: 'MINUTES') }
+  parameters {
+    booleanParam(name: 'RUN_DEPENDENCY_CHECK', defaultValue: false, description: 'OWASP Dependency-Check (first run downloads the NVD database: 20+ min)')
+  }
+  // NOTE: Jenkins runs in a container and talks to the HOST docker daemon, so tool containers use
+  // --volumes-from jenkins (same /var/jenkins_home paths) instead of -v $WORKSPACE:... bind mounts,
+  // which would mount an empty host directory and silently scan nothing.
   environment {
     APP_DIR  = 'vle/09-devsecops-healthcare/app'
     K8S_DIR  = 'vle/09-devsecops-healthcare/k8s'
@@ -16,9 +22,9 @@ pipeline {
     stage('1. Secret scanning (Gitleaks)') {
       steps {
         sh '''
-          docker run --rm -v "$WORKSPACE:/repo" zricethezav/gitleaks:v8.21.2 detect \
-            --source /repo --config /repo/$SEC_DIR/.gitleaks.toml --no-git \
-            --report-format json --report-path /repo/gitleaks-report.json --exit-code 1
+          docker run --rm --user 0 --volumes-from jenkins zricethezav/gitleaks:v8.21.2 detect \
+            --source "$WORKSPACE" --config "$WORKSPACE/$SEC_DIR/.gitleaks.toml" --no-git \
+            --report-format json --report-path "$WORKSPACE/gitleaks-report.json" --exit-code 1
         '''
       }
     }
@@ -38,12 +44,13 @@ pipeline {
           steps { dir(env.APP_DIR) { sh 'npm audit --omit=dev --audit-level=high' } }
         }
         stage('OWASP Dependency-Check') {
+          when { expression { params.RUN_DEPENDENCY_CHECK } }
           steps {
             sh '''
               mkdir -p odc-report
-              docker run --rm -v "$WORKSPACE/$APP_DIR:/src" -v "$WORKSPACE/odc-report:/report" \
+              docker run --rm --user 0 --volumes-from jenkins \
                 -v odc-data:/usr/share/dependency-check/data owasp/dependency-check:latest \
-                --scan /src --format HTML --format JSON --out /report --project patient-api \
+                --scan "$WORKSPACE/$APP_DIR" --format HTML --format JSON --out "$WORKSPACE/odc-report" --project patient-api \
                 --failOnCVSS 9 --disableYarnAudit || echo "ODC finished"
             '''
           }
@@ -55,7 +62,8 @@ pipeline {
       steps {
         withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
           sh '''
-            docker run --rm --network kind -v "$WORKSPACE/$APP_DIR:/usr/src" sonarsource/sonar-scanner-cli \
+            docker run --rm --user 0 --network kind --volumes-from jenkins -w "$WORKSPACE/$APP_DIR" sonarsource/sonar-scanner-cli \
+              -Dsonar.projectBaseDir="$WORKSPACE/$APP_DIR" \
               -Dsonar.host.url=$SONAR_URL -Dsonar.token=$SONAR_TOKEN -Dsonar.qualitygate.wait=true
           '''
         }
@@ -101,11 +109,12 @@ pipeline {
         withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG'),
                          string(credentialsId: 'patient-api-key', variable: 'API_KEY')]) {
           sh '''
-            kubectl apply -f $K8S_DIR/secure-deployment.yaml --dry-run=server >/dev/null
             kubectl create namespace healthcare --dry-run=client -o yaml | kubectl apply -f -
             kubectl -n healthcare create secret generic patient-api-secret \
               --from-literal=api-key="$API_KEY" --dry-run=client -o yaml | kubectl apply -f -
-            sed "s|IMAGE_PLACEHOLDER|$IMAGE|" $K8S_DIR/secure-deployment.yaml | kubectl apply -f -
+            sed "s|IMAGE_PLACEHOLDER|$IMAGE|" $K8S_DIR/secure-deployment.yaml > /tmp/secure-deployment.yaml
+            kubectl apply -f /tmp/secure-deployment.yaml --dry-run=server >/dev/null   # admission (PSA restricted) check first
+            kubectl apply -f /tmp/secure-deployment.yaml
             kubectl apply -f $K8S_DIR/network-policy.yaml -f $K8S_DIR/rbac.yaml
             kubectl -n healthcare rollout status deployment/patient-api --timeout=180s
           '''
@@ -117,8 +126,8 @@ pipeline {
       steps {
         sh '''
           mkdir -p zap && chmod 777 zap
-          docker run --rm --network kind -v "$WORKSPACE/zap:/zap/wrk" ghcr.io/zaproxy/zaproxy:stable \
-            zap-baseline.py -t http://pbl-control-plane:30083/health -r zap-report.html -I || true
+          docker run --rm --network kind --volumes-from jenkins ghcr.io/zaproxy/zaproxy:stable bash -c \
+            "mkdir -p /zap/wrk && zap-baseline.py -t http://pbl-control-plane:30083/health -r zap-report.html -I; cp /zap/wrk/zap-report.html $WORKSPACE/zap/" || true
         '''
       }
     }

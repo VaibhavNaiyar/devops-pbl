@@ -36,4 +36,7 @@ Non-root UID 1000 · read-only root filesystem · all Linux capabilities dropped
 3. New pipeline → Script Path `vle/09-devsecops-healthcare/Jenkinsfile` → Build.
 4. Test: `curl -H "x-api-key: <your key>" localhost:30083/api/patients/P1001`
 
-**Demo a blocked build:** add `const AWS_KEY="AKIAIOSFODNN7EXAMPLE"` to app.js and push → Gitleaks stage fails, nothing is deployed.
+**Demo a blocked build:** `bash vle/09-devsecops-healthcare/security/leak-demo.sh add` → commit + push → Build → stage 1 Gitleaks fails, nothing is deployed. Then `leak-demo.sh remove` → commit + push → build passes.
+(Don't use AWS's documented example key `AKIAIOSFODNN7EXAMPLE`: Gitleaks allow-lists it, so it would not block.)
+
+**Notes:** OWASP Dependency-Check is optional (`RUN_DEPENDENCY_CHECK` build parameter), because its first run downloads the NVD database (20+ min). `npm audit` covers SCA by default.

@@ -16,7 +16,8 @@ pipeline {
     stage('Detect live color') {
       steps {
         withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
-          sh 'kubectl apply -f $K8S_DIR/services.yaml'
+          // create services only once: re-applying would reset shop-live's selector to blue on every build
+          sh 'kubectl -n $NS get svc shop-live >/dev/null 2>&1 || kubectl apply -f $K8S_DIR/services.yaml'
           script {
             env.LIVE = sh(script: "kubectl -n ${NS} get svc shop-live -o jsonpath='{.spec.selector.color}'", returnStdout: true).trim()
             env.IDLE = env.LIVE == 'blue' ? 'green' : 'blue'

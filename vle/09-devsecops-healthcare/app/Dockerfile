@@ -12,5 +12,5 @@ COPY --from=deps --chown=node:node /app/node_modules ./node_modules
 COPY --chown=node:node src ./src
 USER 1000
 EXPOSE 8080
-HEALTHCHECK --interval=15s --timeout=3s CMD wget -qO- http://localhost:8080/health || exit 1
+HEALTHCHECK --interval=15s --timeout=3s CMD ["wget", "-qO-", "http://localhost:8080/health"]
 CMD ["node", "src/server.js"]

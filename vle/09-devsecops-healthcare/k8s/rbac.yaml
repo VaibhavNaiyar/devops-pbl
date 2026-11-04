@@ -1,4 +1,5 @@
-# Least privilege: Jenkins deployer can only manage workloads in the healthcare namespace
+# Least privilege: Jenkins deployer can only roll out the workload in the healthcare namespace.
+# Services/Secrets are created once by an admin; the deployer may only read pods/services (Trivy KSV-0056/KSV-0041).
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata: { name: deployer, namespace: healthcare }
@@ -7,5 +8,5 @@ rules:
     resources: ["deployments"]
     verbs: ["get", "list", "create", "update", "patch"]
   - apiGroups: [""]
-    resources: ["services", "pods", "secrets"]
-    verbs: ["get", "list", "create", "update", "patch"]
+    resources: ["pods", "services"]
+    verbs: ["get", "list", "watch"]
