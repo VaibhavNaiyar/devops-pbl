@@ -52,7 +52,7 @@ pipeline {
       steps {
         withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
           sh '''
-            sed -e "s|COLOR|$IDLE|g" -e "s|IMAGE|$IMAGE|" -e "s|VERSION|$VERSION|" $K8S_DIR/deployment-template.yaml | kubectl apply -f -
+            sed -e "s|__COLOR__|$IDLE|g" -e "s|__IMAGE__|$IMAGE|g" -e "s|__VERSION__|$VERSION|g" $K8S_DIR/deployment-template.yaml | kubectl apply -f -
             kubectl -n $NS rollout status deployment/shop-$IDLE --timeout=180s
           '''
         }

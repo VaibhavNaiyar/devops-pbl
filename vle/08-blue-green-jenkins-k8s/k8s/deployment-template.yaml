@@ -1,23 +1,23 @@
-# Rendered twice by the pipeline: COLOR=blue and COLOR=green
+# Rendered by the pipeline per colour. Placeholders are __COLOR__ __IMAGE__ __VERSION__ (plain COLOR/VERSION would also hit APP_COLOR/APP_VERSION)
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: shop-COLOR
+  name: shop-__COLOR__
   namespace: bluegreen
-  labels: { app: shop, color: COLOR }
+  labels: { app: shop, color: __COLOR__ }
 spec:
   replicas: 2
-  selector: { matchLabels: { app: shop, color: COLOR } }
+  selector: { matchLabels: { app: shop, color: __COLOR__ } }
   template:
-    metadata: { labels: { app: shop, color: COLOR } }
+    metadata: { labels: { app: shop, color: __COLOR__ } }
     spec:
       containers:
         - name: shop
-          image: IMAGE
+          image: __IMAGE__
           ports: [{ containerPort: 3000 }]
           env:
-            - { name: APP_COLOR, value: COLOR }
-            - { name: APP_VERSION, value: "VERSION" }
+            - { name: APP_COLOR, value: __COLOR__ }
+            - { name: APP_VERSION, value: "__VERSION__" }
           readinessProbe: { httpGet: { path: /ready, port: 3000 }, periodSeconds: 5 }
           livenessProbe: { httpGet: { path: /health, port: 3000 }, initialDelaySeconds: 5 }
           resources:
