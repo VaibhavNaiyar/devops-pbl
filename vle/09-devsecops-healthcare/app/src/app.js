@@ -63,4 +63,3 @@ app.post('/api/patients', auth, (req, res) => {
 app.use((err, req, res, next) => res.status(500).json({ error: 'internal error' }));
 
 module.exports = app;
-const AWS_SECRET_KEY = "AKIA4QWERTY7PBL2LEAK"; // leaked by mistake (demo)
