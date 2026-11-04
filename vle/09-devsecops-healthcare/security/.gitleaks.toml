@@ -4,4 +4,4 @@ useDefault = true
 [allowlist]
 description = "unit-test dummy key"
 regexes = ['''test-key-only-for-unit-tests''']
-paths = ['''node_modules''', '''odc-report''', '''zap''']
+paths = ['''node_modules''', '''odc-report''', '''zap''', '''gitleaks-report\.json''', '''trivy-image\.txt''']
