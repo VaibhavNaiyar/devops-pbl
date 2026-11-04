@@ -7,7 +7,7 @@ cd "$(dirname "$0")"
 APP=../05-cloud-native-monitoring/app
 (cd $APP && npm ci && npm test)                        # fail fast -> no broken deploys
 docker build -t "$USER/pbl-shop:$VER" $APP
-docker push "$USER/pbl-shop:$VER"
+for i in 1 2 3; do docker push "$USER/pbl-shop:$VER" && break; [ $i = 3 ] && exit 1; echo "push failed, retry $i"; sleep 5; done
 cd terraform
 terraform apply -auto-approve -var "app_image=$USER/pbl-shop:$VER" -var "app_version=$VER"
 ASG=$(terraform output -raw asg_name)
