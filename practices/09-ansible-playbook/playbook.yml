@@ -3,6 +3,7 @@
 - name: Basic server setup
   hosts: local
   become: true
+  gather_subset: ["!hardware"]   # on WSL, root hardware facts hang on Docker Desktop mounts; we only need OS/host/time facts
   vars:
     packages: [git, curl, tree, htop]
     app_user: devops
