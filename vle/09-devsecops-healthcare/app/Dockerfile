@@ -5,7 +5,10 @@ COPY package*.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
 FROM node:20-alpine
-RUN apk upgrade --no-cache
+# runtime only needs `node`: drop the bundled package managers (Trivy found 22 HIGH/CRITICAL CVEs inside npm's own deps)
+RUN apk upgrade --no-cache \
+ && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack /opt/yarn* \
+           /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack /usr/local/bin/yarn /usr/local/bin/yarnpkg
 ENV NODE_ENV=production PORT=8080
 WORKDIR /app
 COPY --from=deps --chown=node:node /app/node_modules ./node_modules
